@@ -1,0 +1,19 @@
+# Core libraries
+numpy
+pandas
+scipy
+scikit-learn
+
+# Deep Learning
+tensorflow
+keras
+
+# Model persistence
+joblib
+
+# Visualization
+matplotlib
+seaborn
+
+# Utilities
+tqdm
