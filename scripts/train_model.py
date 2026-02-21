@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from build_dataset import build_merged_dataset
+
 import warnings
 import joblib
 import numpy as np
@@ -37,11 +39,21 @@ warnings.filterwarnings("ignore")
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# Load data
+
+# Load data (auto-build if missing)
+
+if not MERGED_FILE.exists():
+    print("[INFO] merged_attacks.csv not found. Building dataset from raw CSV files...")
+    build_merged_dataset(force=False)
 
 df = pd.read_csv(MERGED_FILE, low_memory=False)
+
 if "label" not in df.columns:
-    raise ValueError("❌ Column 'label' not found in dataset")
+    raise ValueError(
+        "Column 'label' not found in dataset.\n"
+        "Make sure your raw CSV files either contain a label column "
+        "or are separated per attack type (one class per file)."
+    )
 
 y_raw = df["label"].astype(str)
 X_all = df.drop(columns=["label"])
