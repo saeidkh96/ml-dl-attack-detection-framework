@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import glob
+from pathlib import Path
+
 import joblib
 import numpy as np
 import pandas as pd
@@ -78,10 +80,10 @@ summary_rows: list[dict] = []
 classic_model_paths = sorted(glob.glob(str(RESULTS_DIR / "model_*.joblib")))
 
 if not classic_model_paths:
-    print("No classic models found (results/model_*.joblib).")
+    print("⚠️ No classic models found (results/model_*.joblib).")
 
 for mp in classic_model_paths:
-    model_name = mp.split("/")[-1].split("\\")[-1].replace(".joblib", "").replace("model_", "")
+    model_name = Path(mp).stem.replace("model_", "")
     print(f"\nScoring CLASSIC model: {model_name}")
 
     model = joblib.load(mp)
@@ -181,7 +183,7 @@ if DL_PREPROC_PATH.exists():
 
         pred_rows.append(base)
     else:
-        print(" LSTM model not found:", str(LSTM_PATH))
+        print("⚠️ LSTM model not found:", str(LSTM_PATH))
 
     # ---- CNN
     if CNN_PATH.exists():
@@ -221,11 +223,11 @@ if DL_PREPROC_PATH.exists():
 
         pred_rows.append(base)
     else:
-        print("CNN model not found:", str(CNN_PATH))
+        print("⚠️ CNN model not found:", str(CNN_PATH))
 
 else:
-    print("DL preprocessing file not found:", str(DL_PREPROC_PATH))
-    print("Train deep models first (train_model.py).")
+    print("⚠️ DL preprocessing file not found:", str(DL_PREPROC_PATH))
+    print("   Train deep models first (train_model.py).")
 
 # =========================================================
 # Save outputs for Splunk
