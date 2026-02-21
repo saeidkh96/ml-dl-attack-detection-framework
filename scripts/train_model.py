@@ -1,7 +1,7 @@
-# scripts/train_models_all.py
+# scripts/train_model.py
 
+from __future__ import annotations
 
-import os
 import warnings
 import joblib
 import numpy as np
@@ -18,31 +18,28 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.svm import LinearSVC
 
-import tensorflow as tf
 from keras import layers, models
+
+from config import (
+    MERGED_FILE,
+    RESULTS_DIR,
+    DL_PREPROC_PATH,
+    LSTM_PATH,
+    CNN_PATH,
+    RANDOM_STATE,
+)
 
 warnings.filterwarnings("ignore")
 
 
-# ===============================
-# Paths
-# ===============================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(BASE_DIR, "..", "data", "processed", "merged_attacks.csv")
-RESULTS_DIR = os.path.join(BASE_DIR, "..", "results")
-os.makedirs(RESULTS_DIR, exist_ok=True)
+# Ensure results directory exists
 
-DL_PREPROC_PATH = os.path.join(RESULTS_DIR, "dl_preproc.joblib")
-LSTM_PATH = os.path.join(RESULTS_DIR, "model_dl_lstm.keras")
-CNN_PATH  = os.path.join(RESULTS_DIR, "model_dl_cnn.keras")
-
-RANDOM_STATE = 42
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# ===============================
 # Load data
-# ===============================
-df = pd.read_csv(DATA_PATH, low_memory=False)
+
+df = pd.read_csv(MERGED_FILE, low_memory=False)
 if "label" not in df.columns:
     raise ValueError("❌ Column 'label' not found in dataset")
 
@@ -71,9 +68,8 @@ print("Train shape:", X_train.shape)
 print("Test  shape:", X_test.shape)
 
 
-# =========================================================
 # PART A) Classic ML (4 models)
-# =========================================================
+
 numeric_cols = X_train.select_dtypes(include=["number", "bool"]).columns.tolist()
 categorical_cols = X_train.select_dtypes(include=["object"]).columns.tolist()
 
@@ -139,20 +135,19 @@ for name, model in classic_models.items():
     print("Weighted F1:", f1w)
     print(classification_report(y_test, pred))
 
-    out_path = os.path.join(RESULTS_DIR, f"model_{name}.joblib")
+    out_path = RESULTS_DIR / f"model_{name}.joblib"
     joblib.dump(model, out_path)
     print("Saved:", out_path)
 
-print("\n✅ Classic models saved to results/model_*.joblib")
+print("\n Classic models saved to results/model_*.joblib")
 
 
-# =========================================================
 # PART B) Deep Learning (2 models): LSTM + 1D-CNN
 # IMPORTANT: use ONLY numeric features to avoid OneHot explosion
-# =========================================================
+
 num_cols_dl = X_train.select_dtypes(include=["number", "bool"]).columns.tolist()
 if len(num_cols_dl) == 0:
-    raise ValueError("❌ No numeric columns found for deep learning models.")
+    raise ValueError("No numeric columns found for deep learning models.")
 
 Xtr_num = X_train[num_cols_dl].copy()
 Xte_num = X_test[num_cols_dl].copy()
@@ -193,9 +188,8 @@ Xte_seq = Xte_num.reshape((Xte_num.shape[0], n_features, 1))
 print("DL input shape:", Xtr_seq.shape, "(train)")
 
 
-# -----------------------
 # DL1) LSTM
-# -----------------------
+
 print("\n" + "=" * 70)
 print("Training DEEP model: LSTM")
 
@@ -225,9 +219,8 @@ lstm.save(LSTM_PATH)
 print("Saved LSTM to:", LSTM_PATH)
 
 
-# -----------------------
 # DL2) 1D-CNN (Conv1D)
-# -----------------------
+
 print("\n" + "=" * 70)
 print("Training DEEP model: 1D-CNN")
 
@@ -259,4 +252,4 @@ cnn.fit(
 cnn.save(CNN_PATH)
 print("Saved CNN to:", CNN_PATH)
 
-print("\n✅ All models trained & saved.")
+print("\n All models trained & saved.")
