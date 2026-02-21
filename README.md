@@ -1,96 +1,164 @@
-# Web Attack Detection with Deep Learning and Machine Learning (Splunk Integration)
+# A Unified Framework for Multi-Class Web and Network Attack Detection Using Classical and Deep Learning
 
-This project implements multiple **machine learning and deep learning models** for detecting **web attacks (e.g., SQL Injection)** and integrates the results with **Splunk** for security monitoring and analysis.
+This project presents a unified and reproducible framework for multi-class intrusion detection in web and network environments. It integrates classical machine learning algorithms with deep learning architectures under a consistent preprocessing and evaluation pipeline.
 
-The system is designed to support SOC-style workflows by providing:
-- Trained ML/DL models
-- Model evaluation and comparison
-- Prediction outputs compatible with Splunk dashboards
+The framework supports automated dataset construction, fair model comparison, and export of prediction outputs compatible with Splunk for security monitoring and analysis.
 
----
+## Overview
 
-## 📌 Features
+Modern web and network infrastructures are exposed to increasingly sophisticated attacks such as DDoS, SQL Injection, and Remote Code Execution. Traditional rule-based systems often fail to detect complex or evolving threats.
 
-- Detection of web attacks (SQL Injection datasets)
-- Classical ML models:
-  - Logistic Regression
-  - Random Forest
-  - Linear SVC
-  - SGD Classifier
-- Deep Learning models:
-  - CNN
-  - LSTM
-- Model comparison and scoring
-- Splunk-ready prediction & summary CSV outputs
-- Modular and extensible Python codebase
+This framework evaluates:
 
----
-Data Preparation
+Classical Machine Learning Models
 
-Merge and clean multiple SQL Injection datasets
+Random Forest
 
-Feature extraction and preprocessing
+Logistic Regression
 
-Model Training
+Linear Support Vector Classifier (Linear SVC)
 
-Train multiple ML and DL models
+SGD Classifier
 
-Save trained models locally (ignored in Git)
+Deep Learning Models
 
-Evaluation
+Long Short-Term Memory (LSTM)
 
-Generate confusion matrices
+One-Dimensional Convolutional Neural Network (1D-CNN)
 
-Compare performance across models
+All models are trained and evaluated under identical conditions to ensure fair and reproducible comparison.
 
-Splunk Integration
+## Key Features
 
-Export predictions as CSV
+Automatic dataset building from user-provided CSV files
 
-Generate summary files for dashboards
+Unified preprocessing pipeline
 
-▶️ How to Run
-1️⃣ Create Virtual Environment
-python -m venv venv310
-source venv310/bin/activate   # Linux / macOS
-venv310\Scripts\activate      # Windows
-2️⃣ Install Dependencies
+Fixed train/test split for consistent benchmarking
+
+Classical vs Deep Learning model comparison
+
+Weighted evaluation metrics for multi-class datasets
+
+Splunk-compatible prediction exports
+
+Lightweight repository (no dataset stored)
+
+## Project Structure
+project_root/
+│
+├── data/
+│   ├── raw/                # User-provided dataset CSV files
+│   └── processed/          # Auto-generated merged dataset
+│
+├── results/                # Trained models and exported outputs
+│
+└── scripts/
+    ├── config.py
+    ├── build_dataset.py
+    ├── train_model.py
+    └── score_all_models_for_splunk.py
+## Providing Your Dataset
+
+Place your dataset CSV file(s) inside:
+
+data/raw/
+
+The system will automatically:
+
+Detect all .csv files in data/raw/
+
+Use a label column if it exists
+
+If no label column exists, infer the label from the filename
+
+Merge all files into:
+
+data/processed/merged_attacks.csv
+Important Notes
+
+For correct multi-class detection:
+
+Either provide separate CSV files per attack type
+
+Or include a label column in your dataset
+
+No dataset is stored in this repository.
+
+## Installation
+1. Create Virtual Environment
+python -m venv venv
+source venv/bin/activate      # macOS / Linux
+venv\Scripts\activate         # Windows
+2. Install Dependencies
 pip install -r requirements.txt
-3️⃣ Train Models
+## Training Models
 python scripts/train_model.py
-4️⃣ Score All Models for Splunk
+
+This step will:
+
+Automatically build the merged dataset (if missing)
+
+Train 4 classical ML models
+
+Train LSTM and 1D-CNN models
+
+Save trained models into results/
+
+## Generate Splunk-Compatible Outputs
 python scripts/score_all_models_for_splunk.py
-📊 Outputs
-The following files are generated (and ignored by Git):
 
-Trained ML/DL models (.joblib, .keras)
+This generates:
 
-Confusion matrix images
+results/splunk_model_predictions.csv
 
-Splunk-compatible CSV files:
+results/splunk_model_summary.csv
 
-splunk_model_predictions.csv
+These files can be directly ingested into Splunk dashboards for monitoring and performance analysis.
 
-splunk_model_summary.csv
+## Evaluation Metrics
 
-🔐 Notes
-Trained models and generated results are not committed to Git.
+Models are evaluated using:
 
-Only source code and configuration files are version-controlled.
+Accuracy
 
-The project is designed for academic research and SOC experimentation.
+Weighted Precision
 
-🚀 Future Improvements
-Online / streaming prediction for Splunk
+Weighted Recall
+
+Weighted F1-score
+
+A fixed train/test split ensures consistent and fair comparison across all model families.
+
+## Design Principles
+
+Reproducibility
+
+Modularity
+
+Lightweight repository
+
+Deployment-aware evaluation
+
+Research-oriented experimentation
+
+The integration with Splunk bridges the gap between offline experimentation and operational security monitoring environments.
+
+## Future Work
+
+Real-time traffic streaming
+
+Hybrid ensemble models
+
+Online / streaming inference
 
 Advanced anomaly detection
 
-Reduction of false positives
+SOC alert integration
 
-Real-time SOC alerting integration
+## Authors
 
-👤 Author
 Bita Sabet
 Saeid Khalilian
 
-
+University of Passau
