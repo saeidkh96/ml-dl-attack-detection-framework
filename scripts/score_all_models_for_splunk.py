@@ -1,39 +1,37 @@
 # scripts/score_all_models_for_splunk.py
 
-import os
+from __future__ import annotations
+
 import glob
 import joblib
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
-import tensorflow as tf
-from keras import layers, models
-from keras.models import load_model
+from config import (
+    MERGED_FILE,
+    RESULTS_DIR,
+    OUT_PRED,
+    OUT_SUMM,
+    DL_PREPROC_PATH,
+    LSTM_PATH,
+    CNN_PATH,
+    RANDOM_STATE,
+)
+
 # ===============================
-# Paths
+# Ensure results directory exists
 # ===============================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(BASE_DIR, "..", "data", "processed", "merged_attacks.csv")
-RESULTS_DIR = os.path.join(BASE_DIR, "..", "results")
-os.makedirs(RESULTS_DIR, exist_ok=True)
-
-OUT_PRED = os.path.join(RESULTS_DIR, "splunk_model_predictions.csv")
-OUT_SUMM = os.path.join(RESULTS_DIR, "splunk_model_summary.csv")
-
-DL_PREPROC_PATH = os.path.join(RESULTS_DIR, "dl_preproc.joblib")
-LSTM_PATH = os.path.join(RESULTS_DIR, "model_dl_lstm.keras")
-CNN_PATH  = os.path.join(RESULTS_DIR, "model_dl_cnn.keras")
-
-RANDOM_STATE = 42
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ===============================
 # Load data
 # ===============================
-df = pd.read_csv(DATA_PATH, low_memory=False)
+df = pd.read_csv(MERGED_FILE, low_memory=False)
 if "label" not in df.columns:
     raise ValueError("Column 'label' not found in dataset")
 
@@ -71,19 +69,19 @@ if time_col:
 else:
     print("No time column found. Output will not include event_time.")
 
-pred_rows = []
-summary_rows = []
+pred_rows: list[pd.DataFrame] = []
+summary_rows: list[dict] = []
 
 # =========================================================
 # A) Score classic models (.joblib)
 # =========================================================
-classic_model_paths = sorted(glob.glob(os.path.join(RESULTS_DIR, "model_*.joblib")))
+classic_model_paths = sorted(glob.glob(str(RESULTS_DIR / "model_*.joblib")))
 
 if not classic_model_paths:
-    print("⚠️ No classic models found (results/model_*.joblib).")
+    print("No classic models found (results/model_*.joblib).")
 
 for mp in classic_model_paths:
-    model_name = os.path.splitext(os.path.basename(mp))[0].replace("model_", "")
+    model_name = mp.split("/")[-1].split("\\")[-1].replace(".joblib", "").replace("model_", "")
     print(f"\nScoring CLASSIC model: {model_name}")
 
     model = joblib.load(mp)
@@ -129,7 +127,7 @@ for mp in classic_model_paths:
 # =========================================================
 # B) Score deep learning models (.keras)
 # =========================================================
-if os.path.exists(DL_PREPROC_PATH):
+if DL_PREPROC_PATH.exists():
     dl = joblib.load(DL_PREPROC_PATH)
 
     num_cols_dl = dl["num_cols_dl"]
@@ -146,7 +144,7 @@ if os.path.exists(DL_PREPROC_PATH):
     Xte_seq = Xte_num.reshape((Xte_num.shape[0], n_features, 1))
 
     # ---- LSTM
-    if os.path.exists(LSTM_PATH):
+    if LSTM_PATH.exists():
         print("\nScoring DEEP model: dl_lstm")
         lstm = tf.keras.models.load_model(LSTM_PATH)
 
@@ -183,10 +181,10 @@ if os.path.exists(DL_PREPROC_PATH):
 
         pred_rows.append(base)
     else:
-        print("⚠️ LSTM model not found:", LSTM_PATH)
+        print(" LSTM model not found:", str(LSTM_PATH))
 
     # ---- CNN
-    if os.path.exists(CNN_PATH):
+    if CNN_PATH.exists():
         print("\nScoring DEEP model: dl_cnn")
         cnn = tf.keras.models.load_model(CNN_PATH)
 
@@ -223,11 +221,11 @@ if os.path.exists(DL_PREPROC_PATH):
 
         pred_rows.append(base)
     else:
-        print("⚠️ CNN model not found:", CNN_PATH)
+        print("CNN model not found:", str(CNN_PATH))
 
 else:
-    print("⚠️ DL preprocessing file not found:", DL_PREPROC_PATH)
-    print("   Train deep models first (train_model.py).")
+    print("DL preprocessing file not found:", str(DL_PREPROC_PATH))
+    print("Train deep models first (train_model.py).")
 
 # =========================================================
 # Save outputs for Splunk
@@ -241,7 +239,7 @@ summ_df = pd.DataFrame(summary_rows).sort_values("f1_weighted", ascending=False)
 pred_df.to_csv(OUT_PRED, index=False)
 summ_df.to_csv(OUT_SUMM, index=False)
 
-print("\nSaved predictions:", OUT_PRED)
-print("Saved summary    :", OUT_SUMM)
+print("\nSaved predictions:", str(OUT_PRED))
+print("Saved summary    :", str(OUT_SUMM))
 print("\nTop models by weighted F1:")
 print(summ_df.head(10).to_string(index=False))
