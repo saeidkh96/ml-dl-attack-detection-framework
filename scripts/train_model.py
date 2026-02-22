@@ -9,7 +9,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit, train_test_split
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -35,13 +35,10 @@ warnings.filterwarnings("ignore")
 
 
 # Ensure results directory exists
-
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-
 # Load data (auto-build if missing)
-
 if not MERGED_FILE.exists():
     print("[INFO] merged_attacks.csv not found. Building dataset from raw CSV files...")
     build_merged_dataset(force=False)
@@ -54,6 +51,20 @@ if "label" not in df.columns:
         "Make sure your raw CSV files either contain a label column "
         "or are separated per attack type (one class per file)."
     )
+
+
+# 0) Drop leak-prone / non-generalizable columns (recommended)
+
+DROP_COLS = [
+    "No.",
+    "Info",
+    "source_file",
+    "Frame Time",
+    "Frame Time (Epoch)",
+]
+df = df.drop(columns=[c for c in DROP_COLS if c in df.columns], errors="ignore")
+
+# 1) Prepare X/y
 
 y_raw = df["label"].astype(str)
 X_all = df.drop(columns=["label"])
@@ -68,13 +79,52 @@ if all_nan_cols:
 le = LabelEncoder()
 y_all = le.fit_transform(y_raw)
 
-# Fixed split for fair comparisons
-X_train, X_test, y_train, y_test, y_raw_train, y_raw_test = train_test_split(
-    X_all, y_all, y_raw,
-    test_size=0.2,
-    random_state=RANDOM_STATE,
-    stratify=y_all
-)
+# Make y a Series aligned with X index (safer for iloc)
+y_all_series = pd.Series(y_all, index=X_all.index)
+
+
+# 2) Group-based split (prevents flow/IP overlap between train/test)
+
+if "TCP Stream" in df.columns:
+    groups = df["TCP Stream"].fillna(-1).astype(int)
+    print("[INFO] Using GroupShuffleSplit groups = TCP Stream")
+else:
+    has_ip = ("IP Source" in df.columns) and ("IP Destination" in df.columns)
+    if has_ip and ("TCP Source Port" in df.columns) and ("TCP Destination Port" in df.columns):
+        groups = (
+            df["IP Source"].astype(str)
+            + "->"
+            + df["IP Destination"].astype(str)
+            + ":"
+            + df["TCP Source Port"].astype(str)
+            + "->"
+            + df["TCP Destination Port"].astype(str)
+        )
+        print("[INFO] Using GroupShuffleSplit groups = IP pair + ports")
+    elif has_ip:
+        groups = df["IP Source"].astype(str) + "->" + df["IP Destination"].astype(str)
+        print("[INFO] Using GroupShuffleSplit groups = IP pair")
+    else:
+        raise ValueError(
+            "No suitable grouping columns found for group split. "
+            "Need at least 'TCP Stream' OR ('IP Source' and 'IP Destination')."
+        )
+
+gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=RANDOM_STATE)
+train_idx, test_idx = next(gss.split(X_all, y_all_series, groups=groups))
+
+# Pylance-friendly + safe indexing
+train_idx = np.asarray(train_idx, dtype=np.int64)
+test_idx = np.asarray(test_idx, dtype=np.int64)
+
+X_train = X_all.iloc[train_idx].copy()
+X_test = X_all.iloc[test_idx].copy()
+
+y_train = y_all_series.iloc[train_idx].to_numpy(dtype=np.int64)
+y_test = y_all_series.iloc[test_idx].to_numpy(dtype=np.int64)
+
+y_raw_train = y_raw.iloc[train_idx].copy()
+y_raw_test = y_raw.iloc[test_idx].copy()
 
 print("Train shape:", X_train.shape)
 print("Test  shape:", X_test.shape)
@@ -199,9 +249,16 @@ Xte_seq = Xte_num.reshape((Xte_num.shape[0], n_features, 1))
 
 print("DL input shape:", Xtr_seq.shape, "(train)")
 
+# Proper validation split for DL (stratified) instead of Keras validation_split
+Xtr_seq_train, Xtr_seq_val, y_train_train, y_train_val = train_test_split(
+    Xtr_seq, y_train,
+    test_size=0.2,
+    random_state=RANDOM_STATE,
+    stratify=y_train
+)
+
 
 # DL1) LSTM
-
 print("\n" + "=" * 70)
 print("Training DEEP model: LSTM")
 
@@ -220,8 +277,8 @@ lstm.compile(
 )
 
 lstm.fit(
-    Xtr_seq, y_train,
-    validation_split=0.2,
+    Xtr_seq_train, y_train_train,
+    validation_data=(Xtr_seq_val, y_train_val),
     epochs=5,
     batch_size=512,
     verbose="auto"
@@ -232,7 +289,6 @@ print("Saved LSTM to:", LSTM_PATH)
 
 
 # DL2) 1D-CNN (Conv1D)
-
 print("\n" + "=" * 70)
 print("Training DEEP model: 1D-CNN")
 
@@ -254,8 +310,8 @@ cnn.compile(
 )
 
 cnn.fit(
-    Xtr_seq, y_train,
-    validation_split=0.2,
+    Xtr_seq_train, y_train_train,
+    validation_data=(Xtr_seq_val, y_train_val),
     epochs=5,
     batch_size=512,
     verbose="auto"
