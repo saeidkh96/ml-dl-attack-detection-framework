@@ -58,7 +58,7 @@ def build_merged_dataset(
     dfs: list[pd.DataFrame] = []
     for fp in csv_files:
         print(f"[INFO] Loading: {fp.name}")
-        df = pd.read_csv(fp, low_memory=False, encoding="latin1", engine="python", on_bad_lines="skip")
+        df = pd.read_csv(fp, encoding="latin1", engine="python", on_bad_lines="skip")
 
         label_col = _find_label_column(df)
         if label_col is not None:
