@@ -158,7 +158,6 @@ SOC alert integration
 
 ## Authors
 
-Bita Sabet
-Saeid Khalilian
+Saeid Khalilian, Bita Sabet, Talaya Farasat, Joachim Posegga
 
 University of Passau
