@@ -47,6 +47,7 @@ Splunk-compatible prediction exports
 Lightweight repository (no dataset stored)
 
 # Project Structure
+
 project_root/
 │
 ├── data/
@@ -60,6 +61,7 @@ project_root/
     ├── build_dataset.py
     ├── train_model.py
     └── score_all_models_for_splunk.py
+    
 # Providing Your Dataset
 
 Place your dataset CSV file(s) inside:
