@@ -1,10 +1,10 @@
 # A Unified Framework for Multi-Class Web and Network Attack Detection Using Classical and Deep Learning
 
-This project presents a unified and reproducible framework for multi-class intrusion detection in web and network environments. It integrates classical machine learning algorithms with deep learning architectures under a consistent preprocessing and evaluation pipeline.
+This project presents a unified and reproducible framework for multi-class intrusion detection in web and network environments. It integrates classical machine learning algorithms with deep learning architectures under a consistent preprocessing and leakage-aware evaluation pipeline.
 
 The framework supports automated dataset construction, fair model comparison, and export of prediction outputs compatible with Splunk for security monitoring and analysis.
 
-## Overview
+# Overview
 
 Modern web and network infrastructures are exposed to increasingly sophisticated attacks such as DDoS, SQL Injection, and Remote Code Execution. Traditional rule-based systems often fail to detect complex or evolving threats.
 
@@ -26,15 +26,17 @@ Long Short-Term Memory (LSTM)
 
 One-Dimensional Convolutional Neural Network (1D-CNN)
 
-All models are trained and evaluated under identical conditions to ensure fair and reproducible comparison.
+All models are trained and evaluated under consistent preprocessing and controlled data-splitting conditions to ensure reproducibility and fair comparison.
 
-## Key Features
+# Key Features
 
 Automatic dataset building from user-provided CSV files
 
 Unified preprocessing pipeline
 
-Fixed train/test split for consistent benchmarking
+Group-based train/test split (TCP Stream) to prevent flow-level leakage
+
+Explicit stratified validation for deep learning models
 
 Classical vs Deep Learning model comparison
 
@@ -44,7 +46,7 @@ Splunk-compatible prediction exports
 
 Lightweight repository (no dataset stored)
 
-## Project Structure
+# Project Structure
 project_root/
 │
 ├── data/
@@ -58,7 +60,7 @@ project_root/
     ├── build_dataset.py
     ├── train_model.py
     └── score_all_models_for_splunk.py
-## Providing Your Dataset
+# Providing Your Dataset
 
 Place your dataset CSV file(s) inside:
 
@@ -75,7 +77,7 @@ If no label column exists, infer the label from the filename
 Merge all files into:
 
 data/processed/merged_attacks.csv
-Important Notes
+## Important Notes
 
 For correct multi-class detection:
 
@@ -85,14 +87,14 @@ Or include a label column in your dataset
 
 No dataset is stored in this repository.
 
-## Installation
-1. Create Virtual Environment
+# Installation
+## 1. Create Virtual Environment
 python -m venv venv
 source venv/bin/activate      # macOS / Linux
 venv\Scripts\activate         # Windows
-2. Install Dependencies
+## 2. Install Dependencies
 pip install -r requirements.txt
-## Training Models
+# Training Models
 python scripts/train_model.py
 
 This step will:
@@ -105,7 +107,7 @@ Train LSTM and 1D-CNN models
 
 Save trained models into results/
 
-## Generate Splunk-Compatible Outputs
+# Generate Splunk-Compatible Outputs
 python scripts/score_all_models_for_splunk.py
 
 This generates:
@@ -116,9 +118,23 @@ results/splunk_model_summary.csv
 
 These files can be directly ingested into Splunk dashboards for monitoring and performance analysis.
 
+# Evaluation Strategy
+## Group-Based Train/Test Split
+
+The dataset is split using GroupShuffleSplit based on TCP Stream identifiers.
+This prevents flow-level data leakage by ensuring that packets from the same TCP stream do not appear in both training and test sets.
+
+This design leads to more realistic generalization estimates for intrusion detection tasks.
+
+Deep Learning Validation Protocol
+
+Deep learning models (LSTM and 1D-CNN) use an explicit stratified validation set derived from the training data.
+
+Keras validation_split is intentionally not used to avoid unintended class imbalance or ordering effects.
+
 ## Evaluation Metrics
 
-Models are evaluated using:
+All models are evaluated on the held-out test set using:
 
 Accuracy
 
@@ -128,23 +144,25 @@ Weighted Recall
 
 Weighted F1-score
 
-A fixed train/test split ensures consistent and fair comparison across all model families.
+Weighted metrics are used to properly account for class imbalance in multi-class intrusion detection scenarios.
 
-## Design Principles
+# Design Principles
 
 Reproducibility
 
 Modularity
 
-Lightweight repository
+Lightweight repository design
 
 Deployment-aware evaluation
+
+Leakage-aware experimental setup
 
 Research-oriented experimentation
 
 The integration with Splunk bridges the gap between offline experimentation and operational security monitoring environments.
 
-## Future Work
+# Future Work
 
 Real-time traffic streaming
 
