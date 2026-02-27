@@ -8,6 +8,8 @@ import warnings
 import joblib
 import numpy as np
 import pandas as pd
+import time
+from datetime import datetime
 
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
@@ -20,7 +22,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression, SGDClassifier
 from sklearn.svm import LinearSVC
 
-from keras import layers, models
+from tensorflow.keras import layers, models
 
 from config import (
     MERGED_FILE,
@@ -34,16 +36,42 @@ from config import (
 warnings.filterwarnings("ignore")
 
 
+def _secs(t0: float) -> float:
+    return round(time.perf_counter() - t0, 4)
+
+
 # Ensure results directory exists
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
+# Collect timing stats
+timings: list[dict] = []
+run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+overall_t0 = time.perf_counter()
 
 # Load data (auto-build if missing)
 if not MERGED_FILE.exists():
     print("[INFO] merged_attacks.csv not found. Building dataset from raw CSV files...")
+    t0 = time.perf_counter()
     build_merged_dataset(force=False)
+    timings.append({
+        "stage": "build_dataset",
+        "model": "-",
+        "fit_seconds": _secs(t0),
+        "predict_seconds": 0.0,
+        "total_seconds": _secs(t0),
+        "notes": "build_merged_dataset(force=False)"
+    })
 
+t0 = time.perf_counter()
 df = pd.read_csv(MERGED_FILE, low_memory=False)
+timings.append({
+    "stage": "load_csv",
+    "model": "-",
+    "fit_seconds": _secs(t0),
+    "predict_seconds": 0.0,
+    "total_seconds": _secs(t0),
+    "notes": str(MERGED_FILE)
+})
 
 if "label" not in df.columns:
     raise ValueError(
@@ -53,7 +81,23 @@ if "label" not in df.columns:
     )
 
 
-# 0) Drop leak-prone / non-generalizable columns (recommended)
+# Label normalization
+
+df["label"] = df["label"].astype(str).str.strip().str.lower()
+df["label"] = df["label"].replace({
+    "3": "ddos_udp",
+    "7": "remote_code_execution",
+    "dos_csvvvv": "dos",
+    "sql injection": "sql_injection",
+    "sql-injection2": "sql_injection",
+    "sqlinjection-updated": "sql_injection",
+})
+
+print("[INFO] Labels after normalization:", df["label"].unique())
+print("[INFO] Label counts:\n", df["label"].value_counts())
+
+
+#  Drop leak-prone / non-generalizable columns
 
 DROP_COLS = [
     "No.",
@@ -65,7 +109,7 @@ DROP_COLS = [
 df = df.drop(columns=[c for c in DROP_COLS if c in df.columns], errors="ignore")
 
 
-# 1) Prepare X/y
+# 2) Prepare X/y
 
 y_raw = df["label"].astype(str)
 X_all = df.drop(columns=["label"])
@@ -79,12 +123,10 @@ if all_nan_cols:
 # Encode labels
 le = LabelEncoder()
 y_all = le.fit_transform(y_raw)
-
-# Make y a Series aligned with X index (safer for iloc)
-y_all_series = pd.Series(y_all, index=X_all.index)
+y_all_np = np.asarray(y_all, dtype=np.int64)
 
 
-# 2) Group-based split (prevents flow/IP overlap between train/test)
+# Group-based split (prevents flow/IP overlap between train/test)
 
 if "TCP Stream" in df.columns:
     groups = df["TCP Stream"].fillna(-1).astype(int)
@@ -111,18 +153,26 @@ else:
             "Need at least 'TCP Stream' OR ('IP Source' and 'IP Destination')."
         )
 
+t0 = time.perf_counter()
 gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=RANDOM_STATE)
-train_idx, test_idx = next(gss.split(X_all, y_all_series, groups=groups))
+train_idx, test_idx = next(gss.split(X_all, y_all_np, groups=groups))
+timings.append({
+    "stage": "split",
+    "model": "-",
+    "fit_seconds": _secs(t0),
+    "predict_seconds": 0.0,
+    "total_seconds": _secs(t0),
+    "notes": "GroupShuffleSplit test_size=0.2"
+})
 
-# Pylance-friendly + safe indexing
 train_idx = np.asarray(train_idx, dtype=np.int64)
 test_idx = np.asarray(test_idx, dtype=np.int64)
 
 X_train = X_all.iloc[train_idx].copy()
 X_test = X_all.iloc[test_idx].copy()
 
-y_train = y_all_series.iloc[train_idx].to_numpy(dtype=np.int64)
-y_test = y_all_series.iloc[test_idx].to_numpy(dtype=np.int64)
+y_train = y_all_np[train_idx]
+y_test = y_all_np[test_idx]
 
 y_raw_train = y_raw.iloc[train_idx].copy()
 y_raw_test = y_raw.iloc[test_idx].copy()
@@ -131,7 +181,7 @@ print("Train shape:", X_train.shape)
 print("Test  shape:", X_test.shape)
 
 
-# PART A) Classic ML (4 models)
+#  Classic ML (4 models)
 
 numeric_cols = X_train.select_dtypes(include=["number", "bool"]).columns.tolist()
 categorical_cols = X_train.select_dtypes(include=["object"]).columns.tolist()
@@ -191,8 +241,13 @@ for name, model in classic_models.items():
     print("\n" + "=" * 70)
     print(f"Training CLASSIC model: {name}")
 
+    t_fit = time.perf_counter()
     model.fit(X_train, y_train)
+    fit_s = _secs(t_fit)
+
+    t_pred = time.perf_counter()
     pred = model.predict(X_test)
+    pred_s = _secs(t_pred)
 
     f1w = f1_score(y_test, pred, average="weighted")
     print("Weighted F1:", f1w)
@@ -202,12 +257,22 @@ for name, model in classic_models.items():
     joblib.dump(model, out_path)
     print("Saved:", out_path)
 
-print("\n Classic models saved to results/model_*.joblib")
+    timings.append({
+        "stage": "classic",
+        "model": name,
+        "fit_seconds": fit_s,
+        "predict_seconds": pred_s,
+        "total_seconds": round(fit_s + pred_s, 4),
+        "notes": f"weighted_f1={round(float(f1w), 6)}"
+    })
+
+print("\nClassic models saved to results/model_*.joblib")
 
 
-# PART B) Deep Learning (2 models): LSTM + 1D-CNN
+# Deep Learning (2 models): LSTM + 1D-CNN
 # IMPORTANT: use ONLY numeric features to avoid OneHot explosion
 
+t0 = time.perf_counter()
 num_cols_dl = X_train.select_dtypes(include=["number", "bool"]).columns.tolist()
 if len(num_cols_dl) == 0:
     raise ValueError("No numeric columns found for deep learning models.")
@@ -242,6 +307,15 @@ joblib.dump(
     },
     DL_PREPROC_PATH
 )
+prep_s = _secs(t0)
+timings.append({
+    "stage": "dl_preprocess",
+    "model": "-",
+    "fit_seconds": prep_s,
+    "predict_seconds": 0.0,
+    "total_seconds": prep_s,
+    "notes": f"n_features={n_features}, n_classes={n_classes}"
+})
 print("\nSaved DL preprocessing to:", DL_PREPROC_PATH)
 
 # For LSTM/CNN treat features as a sequence: (samples, timesteps=n_features, channels=1)
@@ -250,7 +324,7 @@ Xte_seq = Xte_num.reshape((Xte_num.shape[0], n_features, 1))
 
 print("DL input shape:", Xtr_seq.shape, "(train)")
 
-# Proper validation split for DL (stratified) instead of Keras validation_split
+# Proper validation split for DL (stratified)
 Xtr_seq_train, Xtr_seq_val, y_train_train, y_train_val = train_test_split(
     Xtr_seq, y_train,
     test_size=0.2,
@@ -258,8 +332,7 @@ Xtr_seq_train, Xtr_seq_val, y_train_train, y_train_val = train_test_split(
     stratify=y_train
 )
 
-
-# DL1) LSTM
+# LSTM
 print("\n" + "=" * 70)
 print("Training DEEP model: LSTM")
 
@@ -277,6 +350,7 @@ lstm.compile(
     metrics=["accuracy"]
 )
 
+t_fit = time.perf_counter()
 lstm.fit(
     Xtr_seq_train, y_train_train,
     validation_data=(Xtr_seq_val, y_train_val),
@@ -284,12 +358,25 @@ lstm.fit(
     batch_size=512,
     verbose="auto"
 )
+fit_s = _secs(t_fit)
+
+t_pred = time.perf_counter()
+_ = lstm.predict(Xte_seq, batch_size=512, verbose="auto")  # optional: measure inference time
+pred_s = _secs(t_pred)
 
 lstm.save(LSTM_PATH)
 print("Saved LSTM to:", LSTM_PATH)
 
+timings.append({
+    "stage": "deep",
+    "model": "lstm",
+    "fit_seconds": fit_s,
+    "predict_seconds": pred_s,
+    "total_seconds": round(fit_s + pred_s, 4),
+    "notes": "epochs=5,batch=512"
+})
 
-# DL2) 1D-CNN (Conv1D)
+# 1D-CNN
 print("\n" + "=" * 70)
 print("Training DEEP model: 1D-CNN")
 
@@ -310,6 +397,7 @@ cnn.compile(
     metrics=["accuracy"]
 )
 
+t_fit = time.perf_counter()
 cnn.fit(
     Xtr_seq_train, y_train_train,
     validation_data=(Xtr_seq_val, y_train_val),
@@ -317,8 +405,43 @@ cnn.fit(
     batch_size=512,
     verbose="auto"
 )
+fit_s = _secs(t_fit)
+
+t_pred = time.perf_counter()
+_ = cnn.predict(Xte_seq, batch_size=512, verbose="auto")  # optional: measure inference time
+pred_s = _secs(t_pred)
 
 cnn.save(CNN_PATH)
 print("Saved CNN to:", CNN_PATH)
 
-print("\n All models trained & saved.")
+timings.append({
+    "stage": "deep",
+    "model": "cnn_1d",
+    "fit_seconds": fit_s,
+    "predict_seconds": pred_s,
+    "total_seconds": round(fit_s + pred_s, 4),
+    "notes": "epochs=5,batch=512"
+})
+
+# Save timing report
+total_s = _secs(overall_t0)
+timings.append({
+    "stage": "overall",
+    "model": "-",
+    "fit_seconds": total_s,
+    "predict_seconds": 0.0,
+    "total_seconds": total_s,
+    "notes": "whole_script_runtime"
+})
+
+timing_df = pd.DataFrame(timings)
+timing_csv = RESULTS_DIR / f"timing_report_{run_id}.csv"
+timing_df.to_csv(timing_csv, index=False)
+
+print("\nAll models trained & saved.")
+print("Timing report saved to:", timing_csv)
+
+# Print a quick summary (sorted by total time)
+print("\n" + "=" * 70)
+print("Timing summary (top slowest):")
+print(timing_df.sort_values("total_seconds", ascending=False).head(10).to_string(index=False))
